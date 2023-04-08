@@ -1,0 +1,59 @@
+# 객체 검출될 때까지 기다렸다가 객체 추적하는 코드
+# 한명만 트래킹함
+
+import cv2
+
+cap = cv2.VideoCapture('vtest.avi')
+#cap = cv2.VideoCapture(0)
+body_classifier = cv2.CascadeClassifier('haarcascade_fullbody.xml')
+
+# 추적할 사람들의 목록과 라벨을 초기화합니다.
+#people_to_track = []
+#people_labels = {}
+
+object_detected = False  # 객체 검출 여부
+
+# 객체 검출될 때까지 while 루프 반복하여 검출 기다림
+while not object_detected:
+    ret, frame = cap.read()
+    frame = cv2.resize(frame, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    bodies = body_classifier.detectMultiScale(gray, 1.2, 3)
+
+    # 검출되면 bbox에 검출된 객체 저장
+    if len(bodies) > 0:
+        object_detected = True  # 객체 검출
+
+        x, y, w, h = bodies[0]
+        bbox = (x, y, w, h)
+
+    cv2.imshow('Object Detection', frame)
+
+    if cv2.waitKey(100) == 13:  # Enter 키를 누르면 종료
+        break
+
+cv2.destroyAllWindows()
+
+# 객체 검출 후, 추적 코드 작성
+if object_detected:
+    tracker = cv2.TrackerKCF_create() # 트래커 생성
+    tracker.init(frame, bbox)   # 추적 시작
+
+    # 추적 수행하는 루프
+    while True:
+        ret, frame = cap.read()
+        frame = cv2.resize(frame, None, fx=2, fy=2 , interpolation=cv2.INTER_LINEAR)
+        success, bbox = tracker.update(frame)   # bbox업데이트트
+
+        if success:
+            x, y, w, h = [int(val) for val in bbox]
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        cv2.imshow('Object Tracking', frame)
+
+        if cv2.waitKey(100) == 13:  # Enter 키를 누르면 종료
+            break
+
+cap.release()
+cv2.destroyAllWindows()
