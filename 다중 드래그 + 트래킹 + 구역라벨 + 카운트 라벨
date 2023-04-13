@@ -1,0 +1,97 @@
+# 드래그한 모든 객체 트래킹 하는 코드 o
+# 구역 구분 라벨 o
+# 드레그한 순서대로 카운팅 + 라벨 o
+
+import cv2
+
+# 트래킹 객체 리스트와 히스토그램 리스트 초기화
+objects = []
+histograms = []
+
+def select_roi(event, x, y, flags, param):
+    global objects, histograms, count
+
+    if event == cv2.EVENT_LBUTTONDOWN:
+        # 새로운 객체 추가
+        objects.append((x, y, 0, 0))
+        # 새로운 객체의 히스토그램 계산
+        roi = frame[y:y+10, x:x+10]  # 임시 roi
+        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        hist = cv2.calcHist([hsv_roi], [0], None, [16], [0, 180])
+        hist = cv2.normalize(hist, hist, 0, 255, cv2.NORM_MINMAX)
+        histograms.append(hist)
+
+    elif event == cv2.EVENT_MOUSEMOVE and len(objects) > 0:
+        # 드래그 중인 객체 업데이트
+        # 객체 리스트에서 마지막으로 추가된 객체(objects[-1])를 가져옵니다.
+        # 객체의 좌상단 모서리의 위치 (objects[-1][0], objects[-1][1])와 현재 좌표 (x, y)를 사용하여 객체의 새 위치를 계산
+        # 새 위치 정보를 객체 리스트(objects)에 저장
+        objects[-1] = (objects[-1][0], objects[-1][1], x - objects[-1][0], y - objects[-1][1])
+
+    # 드래그가 끝난 객체 트래킹 시작
+    #
+    elif event == cv2.EVENT_LBUTTONUP and len(objects) > 0:
+        # 객체의 위치 정보를 사용하여 프레임(frame)에서 객체의 ROI(Region of Interest)를 추출
+        roi = frame[objects[-1][1]:objects[-1][1]+objects[-1][3], objects[-1][0]:objects[-1][0]+objects[-1][2]]
+        #  이미지의 색상 채널(Hue)에 대한 히스토그램을 계산
+        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        histograms[-1] = cv2.calcHist([hsv_roi], [0], None, [16], [0, 180])
+        histograms[-1] = cv2.normalize(histograms[-1], histograms[-1], 0, 255, cv2.NORM_MINMAX)
+        # 트래커 객체
+        tracker = cv2.TrackerKCF_create() # 생성
+        tracker.init(frame, tuple(objects[-1])) # 초기화 , 위치와 크기 정보
+        trackers.append(tracker)
+        count += 1
+
+# 객체의 위치와 중심좌표를 비교하면 L 또는 R 을 반환하는 함수
+def direction_box(box, center): # center_x >= frame.shape[1] / 2
+    direction = ''
+    x, y, w, h = box
+
+    # calculate distance from center to left and right boundaries of the box
+    distance_to_left = center[0] - x
+    distance_to_right = x + w - center[0]
+
+    if center[0] < frame.shape[1] / 2:
+        direction = 'L'
+    elif center[0] >= frame.shape[1] / 2:
+        direction = 'R'
+
+    return direction
+
+# 카메라 캡처 객체 생성
+cap = cv2.VideoCapture(0)
+
+# 윈도우 생성 및 마우스 콜백 함수 설정v
+cv2.namedWindow('frame')
+cv2.setMouseCallback('frame', select_roi)
+count =0
+
+# 트래킹 시작
+trackers = []
+while True:
+    ret, frame = cap.read()
+
+    # 모든 객체에 대해 트래킹 업데이트
+    for i in range(len(trackers)):
+        success, box = trackers[i].update(frame)
+        if success:
+            box = [int(b) for b in box]
+            p1 = (int(box[0]), int(box[1]))
+            p2 = (int(box[0] + box[2]), int(box[1] + box[3]))
+            cv2.rectangle(frame, p1, p2, (255,0,0), 2)
+            center = (int(box[0] + box[2] / 2), int(box[1] + box[3] / 2))
+            direction = direction_box(box, center)
+            cv2.putText(frame, direction, (center[0] - 20, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f"Count: {count}", (box[0] - 10, box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0),
+                        2)
+        else:
+            del trackers[i], objects[i], histograms[i]
+
+    #dst = cv2.flip(frame, 1)
+    cv2.imshow('frame', frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
